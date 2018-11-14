@@ -1,0 +1,84 @@
+package com.repoMiner;
+
+import org.apache.maven.repository.internal.MavenRepositorySystemUtils;
+import org.eclipse.aether.DefaultRepositorySystemSession;
+import org.eclipse.aether.RepositorySystem;
+import org.eclipse.aether.RepositorySystemSession;
+import org.eclipse.aether.collection.DependencySelector;
+import org.eclipse.aether.connector.basic.BasicRepositoryConnectorFactory;
+import org.eclipse.aether.impl.DefaultServiceLocator;
+import org.eclipse.aether.repository.LocalRepository;
+import org.eclipse.aether.repository.RemoteRepository;
+import org.eclipse.aether.spi.connector.RepositoryConnectorFactory;
+import org.eclipse.aether.spi.connector.transport.TransporterFactory;
+import org.eclipse.aether.transport.file.FileTransporterFactory;
+import org.eclipse.aether.transport.http.HttpTransporterFactory;
+import org.eclipse.aether.util.graph.selector.AndDependencySelector;
+import org.eclipse.aether.util.graph.selector.ExclusionDependencySelector;
+import org.eclipse.aether.util.graph.selector.ScopeDependencySelector;
+import org.eclipse.aether.util.graph.traverser.FatArtifactTraverser;
+
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.List;
+
+import static org.apache.maven.repository.internal.MavenRepositorySystemUtils.newSession;
+
+public class AetherUtils {
+
+    static RepositorySystem newRepositorySystem() {
+
+        DefaultServiceLocator locator = MavenRepositorySystemUtils.newServiceLocator();
+
+        locator.addService(RepositoryConnectorFactory.class, BasicRepositoryConnectorFactory.class);
+        locator.addService(TransporterFactory.class, FileTransporterFactory.class);
+        locator.addService(TransporterFactory.class, HttpTransporterFactory.class);
+
+        locator.setErrorHandler(new DefaultServiceLocator.ErrorHandler() {
+            @Override
+            public void serviceCreationFailed(Class<?> type, Class<?> impl, Throwable exception) {
+                exception.printStackTrace();
+            }
+        });
+
+        return locator.getService(RepositorySystem.class);
+
+    }
+
+
+    static DefaultRepositorySystemSession newRepositorySystemSession(RepositorySystem system, String localRepositoryDir) {
+
+        DefaultRepositorySystemSession session = newSession();
+
+        LocalRepository localRepo = new LocalRepository(localRepositoryDir);
+
+        session.setLocalRepositoryManager(system.newLocalRepositoryManager(session, localRepo));
+
+
+        DependencySelector depFilter =
+                new AndDependencySelector(new ScopeDependencySelector("test", "system"),
+                        new ExclusionDependencySelector());
+        session.setDependencySelector(depFilter);
+
+        session.setDependencyTraverser(new FatArtifactTraverser());
+        session.setTransferListener(new ConsoleTransferListener());
+        session.setRepositoryListener(new ConsoleRepositoryListener());
+
+        return session;
+
+    }
+
+
+    static List<RemoteRepository> newRepositories(RepositorySystem system, RepositorySystemSession session) {
+        return new ArrayList<>(Collections.singletonList(newCentralRepository()));
+    }
+
+
+    static RemoteRepository newCentralRepository() {
+
+        return new RemoteRepository.Builder("central", "default", "http://central.maven.org/maven2/").build();
+
+    }
+
+}
