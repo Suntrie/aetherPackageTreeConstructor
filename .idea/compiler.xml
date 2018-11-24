@@ -1,13 +1,12 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project version="4">
   <component name="CompilerConfiguration">
-    <annotationProcessing>
-      <profile name="Maven default annotation processors profile" enabled="true">
-        <sourceOutputDir name="target/generated-sources/annotations" />
-        <sourceTestOutputDir name="target/generated-test-sources/test-annotations" />
-        <outputRelativeToContentRoot value="true" />
-        <module name="aetherPackageTreeConstructor" />
-      </profile>
-    </annotationProcessing>
+    <bytecodeTargetLevel>
+      <module name="eee" target="1.5" />
+      <module name="ffffff" target="1.5" />
+      <module name="flow" target="1.5" />
+      <module name="rrr" target="1.5" />
+      <module name="ttt" target="1.5" />
+    </bytecodeTargetLevel>
   </component>
 </project>

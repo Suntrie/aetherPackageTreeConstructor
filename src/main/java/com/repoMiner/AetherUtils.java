@@ -16,10 +16,10 @@ import org.eclipse.aether.transport.http.HttpTransporterFactory;
 import org.eclipse.aether.util.graph.selector.AndDependencySelector;
 import org.eclipse.aether.util.graph.selector.ExclusionDependencySelector;
 import org.eclipse.aether.util.graph.selector.ScopeDependencySelector;
+import org.eclipse.aether.util.graph.transformer.ConflictResolver;
 import org.eclipse.aether.util.graph.traverser.FatArtifactTraverser;
 
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 
@@ -46,9 +46,24 @@ public class AetherUtils {
 
     }
 
+    static void setFiltering(DefaultRepositorySystemSession session, boolean set){
+
+        if (set){
+            DependencySelector depFilter =
+                    new AndDependencySelector(new ScopeDependencySelector("test", "system", "provided"),
+                            new ExclusionDependencySelector());
+
+            session.setDependencySelector(depFilter);
+        }else{
+            DependencySelector depFilter =
+                    new AndDependencySelector(new ScopeDependencySelector("test", "system"),
+                            new ExclusionDependencySelector());
+
+            session.setDependencySelector(depFilter);
+        }
+    }
 
     static DefaultRepositorySystemSession newRepositorySystemSession(RepositorySystem system, String localRepositoryDir) {
-
         DefaultRepositorySystemSession session = newSession();
 
         LocalRepository localRepo = new LocalRepository(localRepositoryDir);
@@ -57,7 +72,7 @@ public class AetherUtils {
 
 
         DependencySelector depFilter =
-                new AndDependencySelector(new ScopeDependencySelector("test", "system"),
+                new AndDependencySelector(new ScopeDependencySelector("test", "system", "provided"),
                         new ExclusionDependencySelector());
         session.setDependencySelector(depFilter);
 
@@ -65,12 +80,15 @@ public class AetherUtils {
         session.setTransferListener(new ConsoleTransferListener());
         session.setRepositoryListener(new ConsoleRepositoryListener());
 
-        return session;
+        //To get dirty trees
+        //session.setDependencyGraphTransformer( null );
+        session.setConfigProperty( ConflictResolver.CONFIG_PROP_VERBOSE, true );
 
+        return session;
     }
 
 
-    static List<RemoteRepository> newRepositories(RepositorySystem system, RepositorySystemSession session) {
+    static List<RemoteRepository> newRemoteRepositories(RepositorySystem system, RepositorySystemSession session) {
         return new ArrayList<>(Collections.singletonList(newCentralRepository()));
     }
 
