@@ -8,7 +8,7 @@ public class Main {
         AetherTreeConstructor aetherTreeConstructor=new AetherTreeConstructor
                 ("C:\\Users\\Neverland\\.m2\\repository");
         try {
-            aetherTreeConstructor.loadPackageTree("com.repoMiner.tester:mediatorLibrary:2.0");
+            aetherTreeConstructor.loadPackageTree("com.repoMiner.tester:distibution:1.0-SNAPSHOT");
         } catch (ArtifactDescriptorException | DependencyCollectionException e) {
             e.printStackTrace();
         }

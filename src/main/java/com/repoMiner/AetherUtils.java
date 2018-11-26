@@ -15,6 +15,7 @@ import org.eclipse.aether.transport.file.FileTransporterFactory;
 import org.eclipse.aether.transport.http.HttpTransporterFactory;
 import org.eclipse.aether.util.graph.selector.AndDependencySelector;
 import org.eclipse.aether.util.graph.selector.ExclusionDependencySelector;
+import org.eclipse.aether.util.graph.selector.OptionalDependencySelector;
 import org.eclipse.aether.util.graph.selector.ScopeDependencySelector;
 import org.eclipse.aether.util.graph.transformer.ConflictResolver;
 import org.eclipse.aether.util.graph.traverser.FatArtifactTraverser;
@@ -51,7 +52,7 @@ public class AetherUtils {
         if (set){
             DependencySelector depFilter =
                     new AndDependencySelector(new ScopeDependencySelector("test", "system", "provided"),
-                            new ExclusionDependencySelector());
+                            new ExclusionDependencySelector(), new OptionalDependencySelector());
 
             session.setDependencySelector(depFilter);
         }else{
@@ -73,7 +74,7 @@ public class AetherUtils {
 
         DependencySelector depFilter =
                 new AndDependencySelector(new ScopeDependencySelector("test", "system", "provided"),
-                        new ExclusionDependencySelector());
+                        new ExclusionDependencySelector(), new OptionalDependencySelector());
         session.setDependencySelector(depFilter);
 
         session.setDependencyTraverser(new FatArtifactTraverser());

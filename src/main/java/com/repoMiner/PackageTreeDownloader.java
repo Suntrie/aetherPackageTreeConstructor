@@ -89,7 +89,6 @@ public class PackageTreeDownloader implements DependencyVisitor {
 
                 if (winner != null) {
 
-                    String unrevisionedUserName = getUnversionedPackageCoords(dependencyNode.getArtifact());
                     String unrevisionedDependencyName = getUnversionedPackageCoords(childNode.getArtifact());
 
                     unwinnedChildNodesForParent.computeIfAbsent(dependencyNode, k -> new ArrayList<>());
@@ -134,12 +133,24 @@ public class PackageTreeDownloader implements DependencyVisitor {
 
         Artifact artifact = Objects.requireNonNull(artifactResult).getArtifact();
 
+        boolean optionality;
+
+        if (dependencyNode.getDependency()==null)
+        {
+            optionality=false;
+        }else{
+            optionality=dependencyNode.getDependency().isOptional();
+        }
+
         if (to==RetrieveType.to) {
-            System.out.println("Visit package (possible leaf): " + dependencyNode.getArtifact());
+            System.out.println("Visit package (possible leaf): " + dependencyNode.getArtifact()+" "+
+                    (optionality?"d":"n"));
         } else if (to==RetrieveType.from){
-            System.out.println("Visit package (branching): " + dependencyNode.getArtifact());
+            System.out.println("Visit package (branching): " + dependencyNode.getArtifact()+" "+
+                    (optionality?"d":"n"));
         } else {
-            System.out.println("Visit restored after dirty dependency resolution (branching): " + dependencyNode.getArtifact());
+            System.out.println("Visit restored after dirty dependency resolution (branching): " + dependencyNode.getArtifact()+" "+
+                    (optionality?"d":"n"));
         }
 
         // Очищаем список "грязных зависимостей" и загружаем использующие пакеты
@@ -152,7 +163,8 @@ public class PackageTreeDownloader implements DependencyVisitor {
             if (pair.getValue().size()==0)
                 try {
                     unwinnedChildNodesForParent.remove(pair.getKey());
-                    loadPackage(pair.getKey(), RetrieveType.restored);
+                    DependencyNode key=pair.getKey();
+                    loadPackage(key, RetrieveType.restored);
                 } catch (ArtifactDescriptorException | DependencyCollectionException | IOException | ClassNotFoundException e) {
                     e.printStackTrace();
                 }
@@ -197,14 +209,12 @@ public class PackageTreeDownloader implements DependencyVisitor {
             modelBuildingResult.getEffectiveModel().getModules();
 
             for (Dependency dependency : dependencies) {
-                // if (!coordsList.contains(getUnversionedPackageCoords(dependency))) {
                 if (children.stream().noneMatch(it -> it.getDependency().getArtifact().getGroupId().equals(dependency.getGroupId())
                         && it.getDependency().getArtifact().getArtifactId().equals(dependency.getArtifactId())
                         && it.getDependency().getArtifact().getVersion().equals(dependency.getVersion())
                 ))
                     if (!(dependency.getScope().equals("test") || dependency.getScope().equals("system")))
                         makeTree(dependency.getGroupId() + ":" + dependency.getArtifactId() + ":" + dependency.getVersion());
-                // }
             }
         }
 
@@ -228,7 +238,7 @@ public class PackageTreeDownloader implements DependencyVisitor {
 
     void makeTree(String coords) throws ArtifactDescriptorException, DependencyCollectionException {
 
-        Artifact artifact = new DefaultArtifact("com.repoMiner.tester:mediatorLibrary:2.0");
+        Artifact artifact = new DefaultArtifact("com.repoMiner.tester:distibution:1.0-SNAPSHOT");
 
         AetherUtils.setFiltering(defaultRepositorySystemSession, false);
 
@@ -243,7 +253,7 @@ public class PackageTreeDownloader implements DependencyVisitor {
         AetherUtils.setFiltering(defaultRepositorySystemSession, true);
 
         CollectRequest collectRequest = new CollectRequest();
-        collectRequest.setRootArtifact(descriptorResult.getArtifact());
+        collectRequest.setRootArtifact(descriptorResult.getArtifact()); // Этого недостаточно для root NodeDependency dependency <>null
         collectRequest.setDependencies(descriptorResult.getDependencies());
         collectRequest.setManagedDependencies(descriptorResult.getManagedDependencies());
         collectRequest.setRepositories(descriptorRequest.getRepositories());
