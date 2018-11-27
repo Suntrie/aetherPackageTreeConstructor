@@ -9,13 +9,7 @@
     <packaging>pom</packaging>
     <version>1.0-SNAPSHOT</version>
 
-
     <dependencies>
-       <!-- <dependency>
-            <groupId>com.rabbitmq</groupId>
-            <artifactId>amqp-client</artifactId>
-            <version>5.1.1</version>
-        </dependency>-->
         <dependency>
             <groupId>org.eclipse.aether</groupId>
             <artifactId>aether-api</artifactId>
@@ -57,48 +51,4 @@
             <version>1.0-SNAPSHOT</version>
         </dependency>
     </dependencies>
-    <build>
-        <plugins>
-            <plugin>
-                <artifactId>maven-shade-plugin</artifactId>
-                <version>2.3</version>
-                <executions>
-                    <execution>
-                        <id>shade-jar</id>
-                        <phase>package</phase>
-                        <goals>
-                            <goal>shade</goal>
-                        </goals>
-                        <configuration><!--
-                            <shaderHint>record-shader</shaderHint>-->
-                            <createDependencyReducedPom>true</createDependencyReducedPom>
-                          <!--  <useBaseVersion>true</useBaseVersion>
-                            <createSourcesJar>true</createSourcesJar>-->
-                            <filters>
-                                <filter>
-                                    <artifact>*:*</artifact>
-                                    <excludes>
-                                         <exclude>com.rabbitmq:amqp-client:jar:5.4.3</exclude>
-                                     </excludes>
-                                </filter>
-                            </filters>
-                            <!--<transformers>
-                                <transformer>
-                                    <resource>MANIFEST.MF</resource>
-                                </transformer>
-                                <transformer>
-                                    <resource>META-INF/MANIFEST.MF</resource>
-                                    <file>
-                                        /data/jenkins-slave/workspace/maven-central-deploy/ehcache/target/MANIFEST.MF
-                                    </file>
-                                </transformer>
-                            </transformers>-->
-                        </configuration>
-                    </execution>
-                </executions>
-
-            </plugin>
-        </plugins>
-    </build>
-
 </project>

@@ -1,11 +1,5 @@
 package com.repoMiner;
 
-import javafx.util.Pair;
-import org.apache.maven.model.Dependency;
-import org.apache.maven.model.building.*;
-import org.codehaus.plexus.DefaultPlexusContainer;
-import org.codehaus.plexus.PlexusContainerException;
-import org.codehaus.plexus.component.repository.exception.ComponentLookupException;
 import org.eclipse.aether.DefaultRepositorySystemSession;
 import org.eclipse.aether.RepositorySystem;
 import org.eclipse.aether.artifact.Artifact;
@@ -18,9 +12,9 @@ import org.eclipse.aether.graph.DependencyVisitor;
 import org.eclipse.aether.resolution.*;
 import org.eclipse.aether.util.graph.transformer.ConflictResolver;
 
-import java.io.File;
 import java.io.IOException;
 import java.util.*;
+import java.util.stream.Collectors;
 
 public class PackageTreeDownloader implements DependencyVisitor {
 
@@ -40,30 +34,26 @@ public class PackageTreeDownloader implements DependencyVisitor {
         PackageTreeDownloader.repositorySystem = repositorySystem;
     }
 
-    private String getUnversionedPackageCoords(Artifact artifact) {                                         // TODO: implement Maven logic for parent pom
+    private String getUnversionedPackageCoords(Artifact artifact) {
         return artifact.getGroupId() + ":" + artifact.getArtifactId();
     }
 
     Map<DependencyNode, List<String>>
-            unwinnedChildNodesForParent=new HashMap<>();
+            unwinnedChildNodesForParent = new HashMap<>();
 
     @Override
     public boolean visitEnter(DependencyNode dependencyNode) {
 
         // Если нода - невыигравшая, не делаем ничего
-        DependencyNode currentNodeWinner=(DependencyNode) dependencyNode.
-                getData().get( ConflictResolver.NODE_DATA_WINNER );
+        DependencyNode currentNodeWinner = (DependencyNode) dependencyNode.
+                getData().get(ConflictResolver.NODE_DATA_WINNER);
 
-        if (currentNodeWinner!=null)
+        if (currentNodeWinner != null)
             return true;
 
         // Если у ноды нет детей, её в любом случае можно загрузить
         if (dependencyNode.getChildren().size() == 0) {
-            try {
-                loadPackage(dependencyNode, RetrieveType.to);
-            } catch (ArtifactDescriptorException | DependencyCollectionException | IOException | ClassNotFoundException e) {
-                e.printStackTrace();
-            }
+            loadPackage(dependencyNode, RetrieveType.to);
         }
 
         return true;
@@ -73,17 +63,16 @@ public class PackageTreeDownloader implements DependencyVisitor {
     public boolean visitLeave(DependencyNode dependencyNode) {
 
         // Если нода - невыигравшая, не делаем ничего
-        DependencyNode currentNodeWinner=(DependencyNode) dependencyNode.
-                getData().get( ConflictResolver.NODE_DATA_WINNER );
+        DependencyNode currentNodeWinner = (DependencyNode) dependencyNode.
+                getData().get(ConflictResolver.NODE_DATA_WINNER);
 
-        if (currentNodeWinner!=null)
+        if (currentNodeWinner != null)
             return true;
 
         if (dependencyNode.getChildren().size() != 0) {
 
             // Добавляем для ноды всех невыигравших детей, загрузки которых будем ждать до загрузки самой ноды
             for (DependencyNode childNode : dependencyNode.getChildren()) {
-                //TODO: check: if null for actual winner?
 
                 DependencyNode winner = (DependencyNode) childNode.getData().get(ConflictResolver.NODE_DATA_WINNER);
 
@@ -96,25 +85,65 @@ public class PackageTreeDownloader implements DependencyVisitor {
                 }
             }
 
-            if (unwinnedChildNodesForParent.get(dependencyNode)==null){
-                try {
-                    loadPackage(dependencyNode, RetrieveType.from);
-                } catch (ArtifactDescriptorException | DependencyCollectionException | IOException | ClassNotFoundException e) {
-                    e.printStackTrace();
-                }
+            if (unwinnedChildNodesForParent.get(dependencyNode) == null) {
+                loadPackage(dependencyNode, RetrieveType.from);
             }
         }
 
         return true;
     }
 
-    private enum RetrieveType{
+    private enum RetrieveType {
         to,
         from,
         restored
     }
 
-    private void loadPackage(DependencyNode dependencyNode, RetrieveType to) throws ArtifactDescriptorException, DependencyCollectionException, IOException, ClassNotFoundException {
+
+    private void doLoadPackage(RetrieveType retrieveType,
+                               Artifact artifact,
+                               boolean optionality,
+                               boolean rootDependency) {
+
+        System.out.print("Visit package: " + artifact + " " +
+                (optionality ? "optional" : "non-optional") + ",");
+
+        switch (retrieveType) {
+            case to:
+                System.out.println(" leaf");
+                break;
+            case from:
+                System.out.println(" branching");
+                break;
+            case restored:
+                System.out.println(" branching (restored)");
+                break;
+        }
+
+        String jarPath = artifact.getFile().getPath();
+
+        try {
+            customClassLoader.getExecutableLibraryMethods(jarPath).getFirst();
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+
+        if (rootDependency)
+            try {
+                for (String present : customClassLoader.getExecutableLibraryMethods(jarPath).getSecond().stream().map(Class::getName).collect(Collectors.toSet()))
+                    System.out.println("Class present: " + present);
+                for (String missed : customClassLoader.getMissedClassNames(jarPath))
+                    System.out.println("Class missed: " + missed);
+                for (String missed : customClassLoader.getExecutableLibraryMethods(jarPath).getThird().stream().map(Class::getName).collect(Collectors.toSet()))
+                    System.out.println("Class missed (methods): " + missed);
+
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+
+    }
+
+    private void loadPackage(DependencyNode dependencyNode, RetrieveType to) {
 
         ArtifactRequest artifactRequest = new ArtifactRequest();
 
@@ -135,110 +164,35 @@ public class PackageTreeDownloader implements DependencyVisitor {
 
         boolean optionality;
 
-        if (dependencyNode.getDependency()==null)
-        {
-            optionality=false;
-        }else{
-            optionality=dependencyNode.getDependency().isOptional();
+        if (dependencyNode.getDependency() == null) {
+            optionality = false;
+        } else {
+            optionality = dependencyNode.getDependency().isOptional();
         }
 
-        if (to==RetrieveType.to) {
-            System.out.println("Visit package (possible leaf): " + dependencyNode.getArtifact()+" "+
-                    (optionality?"d":"n"));
-        } else if (to==RetrieveType.from){
-            System.out.println("Visit package (branching): " + dependencyNode.getArtifact()+" "+
-                    (optionality?"d":"n"));
-        } else {
-            System.out.println("Visit restored after dirty dependency resolution (branching): " + dependencyNode.getArtifact()+" "+
-                    (optionality?"d":"n"));
-        }
+        doLoadPackage(to, artifact, optionality,dependencyNode.getDependency() == null); //TODO: check for multimodule proj
 
         // Очищаем список "грязных зависимостей" и загружаем использующие пакеты
 
-        for(Map.Entry<DependencyNode,
-                List<String>> pair: unwinnedChildNodesForParent.entrySet()){
+        for (Map.Entry<DependencyNode,
+                List<String>> pair : unwinnedChildNodesForParent.entrySet()) {
 
             pair.getValue().remove(getUnversionedPackageCoords(artifact));
 
-            if (pair.getValue().size()==0)
-                try {
-                    unwinnedChildNodesForParent.remove(pair.getKey());
-                    DependencyNode key=pair.getKey();
-                    loadPackage(key, RetrieveType.restored);
-                } catch (ArtifactDescriptorException | DependencyCollectionException | IOException | ClassNotFoundException e) {
-                    e.printStackTrace();
-                }
+            if (pair.getValue().size() == 0) {
+                unwinnedChildNodesForParent.remove(pair.getKey());
+                DependencyNode key = pair.getKey();
+                loadPackage(key, RetrieveType.restored);
+            }
         }
-
-        //checkAndResolveParents(artifact, dependencyNode.getChildren());
     }
 
     private CustomClassLoader customClassLoader = new CustomClassLoader();
 
 
-    private void checkAndResolveParents(Artifact artifact, List<DependencyNode> children)
-            throws ArtifactDescriptorException, DependencyCollectionException, IOException, ClassNotFoundException {
-
-        ModelBuilder builder = null;
-        String coords = getUnversionedPackageCoords(artifact);
-
-        try {
-            builder = new DefaultPlexusContainer().lookup(ModelBuilder.class);
-        } catch (ComponentLookupException | PlexusContainerException e) {
-            e.printStackTrace();
-        }
-
-        ModelBuildingRequest req = new DefaultModelBuildingRequest();
-        req.setProcessPlugins(false);
-        req.setModelResolver(new RepoModelResolver(defaultRepositorySystemSession));
-        req.setModelSource(new FileModelSource(new File(artifact.getFile().getPath().replace("jar", "pom"))));
-
-        ModelBuildingResult modelBuildingResult = null;
-
-        try {
-            assert builder != null;
-            modelBuildingResult = builder.build(req);
-        } catch (ModelBuildingException e) {
-            e.printStackTrace();
-        }
-
-        if (modelBuildingResult.getModelIds().size() != 2) {
-
-            List<Dependency> dependencies = modelBuildingResult.getEffectiveModel().getDependencies();
-
-            modelBuildingResult.getEffectiveModel().getModules();
-
-            for (Dependency dependency : dependencies) {
-                if (children.stream().noneMatch(it -> it.getDependency().getArtifact().getGroupId().equals(dependency.getGroupId())
-                        && it.getDependency().getArtifact().getArtifactId().equals(dependency.getArtifactId())
-                        && it.getDependency().getArtifact().getVersion().equals(dependency.getVersion())
-                ))
-                    if (!(dependency.getScope().equals("test") || dependency.getScope().equals("system")))
-                        makeTree(dependency.getGroupId() + ":" + dependency.getArtifactId() + ":" + dependency.getVersion());
-            }
-        }
-
-        try {
-            String jarPath=defaultRepositorySystemSession.getLocalRepository().getBasedir() + "\\" +
-                    artifact.getGroupId().replace(".", "\\") + "\\"
-                    + artifact.getArtifactId() + "\\" + artifact.getVersion() + "\\" +
-                    artifact.getArtifactId() + "-" + artifact.
-                    getVersion() + ".jar";
-            customClassLoader.loadLibraryClassSet(jarPath);
-        } catch (Error e) {
-            e.printStackTrace();
-        }
-
-
-    }
-
-    private String getUnversionedPackageCoords(Dependency dependency) {
-        return dependency.getGroupId() + ":" + dependency.getArtifactId();
-    }
-
     void makeTree(String coords) throws ArtifactDescriptorException, DependencyCollectionException {
 
-        Artifact artifact = new DefaultArtifact("com.repoMiner.tester:distibution:1.0-SNAPSHOT");
+        Artifact artifact = new DefaultArtifact("com.rabbitmq:amqp-client:jar:5.4.3");
 
         AetherUtils.setFiltering(defaultRepositorySystemSession, false);
 
