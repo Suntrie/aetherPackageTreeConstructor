@@ -1,5 +1,9 @@
 package com.repoMiner;
 
+import javafx.util.Pair;
+import org.apache.maven.model.Model;
+import org.apache.maven.model.io.xpp3.MavenXpp3Reader;
+import org.codehaus.plexus.util.xml.pull.XmlPullParserException;
 import org.eclipse.aether.DefaultRepositorySystemSession;
 import org.eclipse.aether.RepositorySystem;
 import org.eclipse.aether.artifact.Artifact;
@@ -10,17 +14,23 @@ import org.eclipse.aether.collection.DependencyCollectionException;
 import org.eclipse.aether.graph.DependencyNode;
 import org.eclipse.aether.graph.DependencyVisitor;
 import org.eclipse.aether.resolution.*;
+import org.eclipse.aether.util.artifact.ArtifactIdUtils;
 import org.eclipse.aether.util.graph.transformer.ConflictResolver;
 
 import java.io.IOException;
+import java.io.InputStream;
 import java.util.*;
+import java.util.jar.JarEntry;
+import java.util.jar.JarFile;
 import java.util.stream.Collectors;
+
+import static com.repoMiner.CustomClassLoader.getNextJarEntryMatches;
 
 public class PackageTreeDownloader implements DependencyVisitor {
 
     private static RepositorySystem repositorySystem;
     private final DefaultRepositorySystemSession defaultRepositorySystemSession;
-    private static List<String> coordsList = new ArrayList<>();
+    private String basePackageCoordinates;
 
     public PackageTreeDownloader(DefaultRepositorySystemSession defaultRepositorySystemSession) {
         this.defaultRepositorySystemSession = defaultRepositorySystemSession;
@@ -34,12 +44,11 @@ public class PackageTreeDownloader implements DependencyVisitor {
         PackageTreeDownloader.repositorySystem = repositorySystem;
     }
 
-    private String getUnversionedPackageCoords(Artifact artifact) {
-        return artifact.getGroupId() + ":" + artifact.getArtifactId();
-    }
-
     Map<DependencyNode, List<String>>
             unwinnedChildNodesForParent = new HashMap<>();
+
+    Set<String> nestedDependencies = new HashSet<>();
+    Set<DependencyNode> usersOfNestedDependencies = new HashSet<>();
 
     @Override
     public boolean visitEnter(DependencyNode dependencyNode) {
@@ -53,7 +62,7 @@ public class PackageTreeDownloader implements DependencyVisitor {
 
         // Если у ноды нет детей, её в любом случае можно загрузить
         if (dependencyNode.getChildren().size() == 0) {
-            loadPackage(dependencyNode, RetrieveType.to);
+            loadArtifact(dependencyNode, RetrieveType.to);
         }
 
         return true;
@@ -78,7 +87,8 @@ public class PackageTreeDownloader implements DependencyVisitor {
 
                 if (winner != null) {
 
-                    String unrevisionedDependencyName = getUnversionedPackageCoords(childNode.getArtifact());
+                    String unrevisionedDependencyName =
+                            ArtifactIdUtils.toVersionlessId(childNode.getArtifact());
 
                     unwinnedChildNodesForParent.computeIfAbsent(dependencyNode, k -> new ArrayList<>());
                     unwinnedChildNodesForParent.get(dependencyNode).add(unrevisionedDependencyName);
@@ -86,11 +96,15 @@ public class PackageTreeDownloader implements DependencyVisitor {
             }
 
             if (unwinnedChildNodesForParent.get(dependencyNode) == null) {
-                loadPackage(dependencyNode, RetrieveType.from);
+                loadArtifact(dependencyNode, RetrieveType.from);
             }
         }
 
         return true;
+    }
+
+    public void setBasePackageCoordinates(String basePackageCoordinates) {
+        this.basePackageCoordinates = basePackageCoordinates;
     }
 
     private enum RetrieveType {
@@ -100,12 +114,15 @@ public class PackageTreeDownloader implements DependencyVisitor {
     }
 
 
-    private void doLoadPackage(RetrieveType retrieveType,
-                               Artifact artifact,
-                               boolean optionality,
-                               boolean rootDependency) {
+    private void loadArtifactClasses(RetrieveType retrieveType,
+                                     Artifact artifact,
+                                     boolean optionality,
+                                     boolean rootDependency) {
 
-        System.out.print("Visit package: " + artifact + " " +
+        if (rootDependency)
+            System.out.println("__Root dependency__");
+
+        System.out.print("Visit artifact: " + artifact + " " +
                 (optionality ? "optional" : "non-optional") + ",");
 
         switch (retrieveType) {
@@ -128,7 +145,7 @@ public class PackageTreeDownloader implements DependencyVisitor {
             e.printStackTrace();
         }
 
-        if (rootDependency)
+        if ((rootDependency) && (basePackageCoordinates.equals(ArtifactIdUtils.toBaseId(artifact))))
             try {
                 for (String present : customClassLoader.getExecutableLibraryMethods(jarPath).getSecond().stream().map(Class::getName).collect(Collectors.toSet()))
                     System.out.println("Class present: " + present);
@@ -143,7 +160,7 @@ public class PackageTreeDownloader implements DependencyVisitor {
 
     }
 
-    private void loadPackage(DependencyNode dependencyNode, RetrieveType to) {
+    private Pair<Artifact, Boolean> resolveArtifactJar(DependencyNode dependencyNode) {
 
         ArtifactRequest artifactRequest = new ArtifactRequest();
 
@@ -154,7 +171,7 @@ public class PackageTreeDownloader implements DependencyVisitor {
         ArtifactResult artifactResult = null;
 
         try {
-            artifactResult = repositorySystem.resolveArtifact(defaultRepositorySystemSession, artifactRequest);
+            artifactResult = repositorySystem.resolveArtifact(defaultRepositorySystemSession, artifactRequest); //TODO: для чего у нас используется resolve?
 
         } catch (ArtifactResolutionException e) {
             e.printStackTrace();
@@ -162,39 +179,92 @@ public class PackageTreeDownloader implements DependencyVisitor {
 
         Artifact artifact = Objects.requireNonNull(artifactResult).getArtifact();
 
+/*
+        // получение вложенных зависимостей (их мы загружать до загрузки внешних не будем)
+        nestedDependencies = getNestedPomDependenciesCoordsForExclusion(descriptorResult.getArtifact());*/
+
         boolean optionality;
 
         if (dependencyNode.getDependency() == null) {
-            optionality = false;
+            optionality = false; // Пришли с корневой нодой
         } else {
             optionality = dependencyNode.getDependency().isOptional();
         }
 
-        doLoadPackage(to, artifact, optionality,dependencyNode.getDependency() == null); //TODO: check for multimodule proj
+        return new Pair<>(artifact, optionality);
+    }
+
+    private void loadArtifact(DependencyNode dependencyNode, RetrieveType to) {
+
+        boolean rootDependency = dependencyNode.getDependency() == null;
+
+        // Не загружаем зависимости, которые есть внутри jar-а
+
+        if (nestedDependencies.contains(ArtifactIdUtils.toVersionlessId(dependencyNode.getArtifact()))) {
+            return;
+        }
+
+        Pair<Artifact, Boolean> loadedJarDescription = resolveArtifactJar(dependencyNode);
+
+        Artifact artifact = loadedJarDescription.getKey();
+        Boolean optionality = loadedJarDescription.getValue();
+
+        loadArtifactClasses(to, artifact, optionality, rootDependency); //TODO: check for multimodule proj
 
         // Очищаем список "грязных зависимостей" и загружаем использующие пакеты
 
         for (Map.Entry<DependencyNode,
                 List<String>> pair : unwinnedChildNodesForParent.entrySet()) {
 
-            pair.getValue().remove(getUnversionedPackageCoords(artifact));
+            pair.getValue().remove(ArtifactIdUtils.toVersionlessId(artifact));
 
             if (pair.getValue().size() == 0) {
                 unwinnedChildNodesForParent.remove(pair.getKey());
                 DependencyNode key = pair.getKey();
-                loadPackage(key, RetrieveType.restored);
+                loadArtifact(key, RetrieveType.restored);
             }
         }
     }
 
+    private Set<String> getNestedPomDependenciesCoordsForExclusion(Artifact artifact) throws IOException, XmlPullParserException {
+
+        JarFile jar = new JarFile(artifact.getFile());
+        JarEntry jarEntry;
+
+        Enumeration<JarEntry> jarEntryEnumeration = jar.entries();
+
+        Set<String> dependencies = new HashSet<>();
+
+        while (true) {
+
+            jarEntry = getNextJarEntryMatches(jarEntryEnumeration, "pom.xml");       //filter target
+
+            if (jarEntry == null) {
+                break;
+            }
+
+            MavenXpp3Reader reader = new MavenXpp3Reader();
+
+            InputStream jarInputStream = jar
+                    .getInputStream(jarEntry);
+
+            Model model = reader.read(jarInputStream);   //TODO: check
+
+            String coords = model.getGroupId() + ":" + model.getArtifactId();
+
+            dependencies.add(coords);
+        }
+
+        return dependencies;
+    }
+
     private CustomClassLoader customClassLoader = new CustomClassLoader();
 
+    void makeTree(String coords, boolean start) throws ArtifactDescriptorException, DependencyCollectionException, IOException, XmlPullParserException {
 
-    void makeTree(String coords) throws ArtifactDescriptorException, DependencyCollectionException {
+        Artifact artifact = new DefaultArtifact(coords);
 
-        Artifact artifact = new DefaultArtifact("com.rabbitmq:amqp-client:jar:5.4.3");
-
-        AetherUtils.setFiltering(defaultRepositorySystemSession, false);
+        AetherUtils.setFiltering(defaultRepositorySystemSession, !start);
 
         ArtifactDescriptorRequest descriptorRequest = new ArtifactDescriptorRequest();
         descriptorRequest.setArtifact(artifact);

@@ -13,12 +13,14 @@ import org.eclipse.aether.spi.connector.RepositoryConnectorFactory;
 import org.eclipse.aether.spi.connector.transport.TransporterFactory;
 import org.eclipse.aether.transport.file.FileTransporterFactory;
 import org.eclipse.aether.transport.http.HttpTransporterFactory;
+import org.eclipse.aether.util.artifact.JavaScopes;
 import org.eclipse.aether.util.graph.selector.AndDependencySelector;
 import org.eclipse.aether.util.graph.selector.ExclusionDependencySelector;
 import org.eclipse.aether.util.graph.selector.OptionalDependencySelector;
 import org.eclipse.aether.util.graph.selector.ScopeDependencySelector;
 import org.eclipse.aether.util.graph.transformer.ConflictResolver;
 import org.eclipse.aether.util.graph.traverser.FatArtifactTraverser;
+import org.eclipse.aether.util.graph.traverser.StaticDependencyTraverser;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -51,13 +53,13 @@ public class AetherUtils {
 
         if (set){
             DependencySelector depFilter =
-                    new AndDependencySelector(new ScopeDependencySelector("test", "system", "provided"),
+                    new AndDependencySelector(new ScopeDependencySelector(JavaScopes.TEST, JavaScopes.SYSTEM, JavaScopes.PROVIDED),
                             new ExclusionDependencySelector(), new OptionalDependencySelector());
 
             session.setDependencySelector(depFilter);
         }else{
             DependencySelector depFilter =
-                    new AndDependencySelector(new ScopeDependencySelector("test", "system"),
+                    new AndDependencySelector(new ScopeDependencySelector(JavaScopes.TEST, JavaScopes.SYSTEM),
                             new ExclusionDependencySelector());
 
             session.setDependencySelector(depFilter);
@@ -77,7 +79,7 @@ public class AetherUtils {
                         new ExclusionDependencySelector(), new OptionalDependencySelector());
         session.setDependencySelector(depFilter);
 
-        session.setDependencyTraverser(new FatArtifactTraverser());
+        session.setDependencyTraverser(new StaticDependencyTraverser(true));
         session.setTransferListener(new ConsoleTransferListener());
         session.setRepositoryListener(new ConsoleRepositoryListener());
 

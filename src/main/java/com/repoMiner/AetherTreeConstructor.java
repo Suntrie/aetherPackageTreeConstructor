@@ -1,9 +1,12 @@
 package com.repoMiner;
 
+import org.codehaus.plexus.util.xml.pull.XmlPullParserException;
 import org.eclipse.aether.DefaultRepositorySystemSession;
 import org.eclipse.aether.RepositorySystem;
 import org.eclipse.aether.collection.DependencyCollectionException;
 import org.eclipse.aether.resolution.ArtifactDescriptorException;
+
+import java.io.IOException;
 
 public class AetherTreeConstructor {
 
@@ -20,10 +23,11 @@ public class AetherTreeConstructor {
         this.defaultRepositorySystemSession = AetherUtils.newRepositorySystemSession(repositorySystem, localRepositoryDir);
     }
 
-    public void loadPackageTree(String coords) throws ArtifactDescriptorException, DependencyCollectionException {
+    public void loadPackageTree(String coords) throws ArtifactDescriptorException, DependencyCollectionException, IOException, XmlPullParserException {
 
         PackageTreeDownloader packageTreeDownloader=new PackageTreeDownloader(defaultRepositorySystemSession);
-        packageTreeDownloader.makeTree(coords);
+        packageTreeDownloader.setBasePackageCoordinates(coords);
+        packageTreeDownloader.makeTree(coords, true);
     }
 
 
