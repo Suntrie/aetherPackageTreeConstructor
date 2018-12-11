@@ -140,18 +140,18 @@ public class PackageTreeDownloader implements DependencyVisitor {
         String jarPath = artifact.getFile().getPath();
 
         try {
-            customClassLoader.getExecutableLibraryMethods(jarPath).getFirst();
+            customClassLoader.getExecutableLibraryMethods(jarPath, new HashSet<>()).getFirst();
         } catch (IOException e) {
             e.printStackTrace();
         }
 
         if ((rootDependency) && (basePackageCoordinates.equals(ArtifactIdUtils.toBaseId(artifact))))
             try {
-                for (String present : customClassLoader.getExecutableLibraryMethods(jarPath).getSecond().stream().map(Class::getName).collect(Collectors.toSet()))
+                for (String present : customClassLoader.getExecutableLibraryMethods(jarPath, new HashSet<>()).getSecond().stream().map(Class::getName).collect(Collectors.toSet()))
                     System.out.println("Class present: " + present);
-                for (String missed : customClassLoader.getMissedClassNames(jarPath))
+                for (String missed : customClassLoader.getMissedClassNames(jarPath, new HashSet<>()))
                     System.out.println("Class missed: " + missed);
-                for (String missed : customClassLoader.getExecutableLibraryMethods(jarPath).getThird().stream().map(Class::getName).collect(Collectors.toSet()))
+                for (String missed : customClassLoader.getExecutableLibraryMethods(jarPath, new HashSet<>()).getThird().stream().map(Class::getName).collect(Collectors.toSet()))
                     System.out.println("Class missed (methods): " + missed);
 
             } catch (IOException e) {

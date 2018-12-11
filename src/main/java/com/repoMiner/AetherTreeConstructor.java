@@ -5,6 +5,8 @@ import org.eclipse.aether.DefaultRepositorySystemSession;
 import org.eclipse.aether.RepositorySystem;
 import org.eclipse.aether.collection.DependencyCollectionException;
 import org.eclipse.aether.resolution.ArtifactDescriptorException;
+import org.eclipse.aether.resolution.ArtifactResolutionException;
+import sun.reflect.generics.tree.Tree;
 
 import java.io.IOException;
 
@@ -15,7 +17,8 @@ public class AetherTreeConstructor {
     private DefaultRepositorySystemSession defaultRepositorySystemSession;
 
     static {
-        PackageTreeDownloader.setRepositorySystem(repositorySystem);
+        //PackageTreeDownloader.setRepositorySystem(repositorySystem);
+        TreeDecider.setRepositorySystem(repositorySystem);
         RepoModelResolver.setRepositorySystem(repositorySystem);
     }
 
@@ -23,11 +26,15 @@ public class AetherTreeConstructor {
         this.defaultRepositorySystemSession = AetherUtils.newRepositorySystemSession(repositorySystem, localRepositoryDir);
     }
 
-    public void loadPackageTree(String coords) throws ArtifactDescriptorException, DependencyCollectionException, IOException, XmlPullParserException {
+    public void loadPackageTree(String coords) throws ArtifactDescriptorException, DependencyCollectionException,
+            IOException, XmlPullParserException, ArtifactResolutionException {
 
-        PackageTreeDownloader packageTreeDownloader=new PackageTreeDownloader(defaultRepositorySystemSession);
+        /*PackageTreeDownloader packageTreeDownloader=new PackageTreeDownloader(defaultRepositorySystemSession);
         packageTreeDownloader.setBasePackageCoordinates(coords);
-        packageTreeDownloader.makeTree(coords, true);
+        packageTreeDownloader.makeTree(coords, true);*/
+
+        TreeDecider treeDecider=new TreeDecider(defaultRepositorySystemSession);
+        treeDecider.makeTree(coords);
     }
 
 
