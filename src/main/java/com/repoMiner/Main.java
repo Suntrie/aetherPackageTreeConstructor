@@ -14,7 +14,7 @@ public class Main {
         try
         {
             aetherTreeConstructor.loadPackageTree(
-                    "com.repoMiner.tester:target:1.0-SNAPSHOT");
+                    "com.tester:libraryUser:1.0-SNAPSHOT");
         } catch (ArtifactDescriptorException | DependencyCollectionException
                 | XmlPullParserException | IOException | ArtifactResolutionException e) {
             e.printStackTrace();

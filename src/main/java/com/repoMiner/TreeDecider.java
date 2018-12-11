@@ -164,7 +164,8 @@ public class TreeDecider {
         }
     }
 
-    private void checkForIntersectionWin(Map<String, DependencyNode> libraryToNodeResolutionMap, DependencyNode child) throws ArtifactResolutionException, IOException, XmlPullParserException {
+    private void checkForIntersectionWin(Map<String, DependencyNode> libraryToNodeResolutionMap, DependencyNode child)
+            throws ArtifactResolutionException, IOException, XmlPullParserException {
         Artifact childArtifact = resolveArtifactJar(child);
 
         Set<String> nestedLibraries = getNestedPomDependenciesCoordsForExclusion(childArtifact);
@@ -187,6 +188,21 @@ public class TreeDecider {
         Map<DependencyNode, Set<String>> nodesWithMissedClasses = new HashMap<>();
         Map<DependencyNode, Set<Class>> nodesWithRecognizedClasses = new HashMap<>();
 
+        Map<DependencyNode, Set<String>> markedNodes = new HashMap<>();
+
+        markedNodes=loadNodesExhaustively(layeredWinnerNodes,
+                libraryToNodeResolutionMap,
+                nodesWithMissedClasses,
+                nodesWithRecognizedClasses);
+
+        logLoadingStatus(markedNodes, nodesWithMissedClasses, nodesWithRecognizedClasses);
+    }
+
+    private Map<DependencyNode, Set<String>> loadNodesExhaustively
+            (List<DependencyNode> layeredWinnerNodes,
+             Map<String, DependencyNode> libraryToNodeResolutionMap,
+             Map<DependencyNode, Set<String>> nodesWithMissedClasses,
+             Map<DependencyNode, Set<Class>> nodesWithRecognizedClasses) throws ArtifactResolutionException, IOException, XmlPullParserException {
         Map<DependencyNode, Set<String>> markedNodes = new HashMap<>();
 
         while (true) {
@@ -217,6 +233,13 @@ public class TreeDecider {
                     }
                 }
 
+                if ((!isRealWinner)&&(filterClassNames.size()!=getAllArtifactsClassNames(currentArtifact).size())) {
+                    isRealWinner = true;
+                    Set<String> intersectionForUnwinner=new HashSet<>();
+                    intersectionForUnwinner.add("intersection");
+                    markedNodes.put(currentNode,intersectionForUnwinner);
+                }
+
                 if (!isRealWinner) {
                     markedNodes.put(currentNode, new HashSet<>());
                     continue;
@@ -238,7 +261,7 @@ public class TreeDecider {
                 break;
         }
 
-        logLoadingStatus(markedNodes, nodesWithMissedClasses, nodesWithRecognizedClasses);
+        return markedNodes;
     }
 
     private Set<String> getAllArtifactsClassNames(Artifact artifact) throws IOException {
@@ -303,7 +326,7 @@ public class TreeDecider {
             }
 
 
-            if (nodesWithMissedClasses.get(markedNode.getKey()).isEmpty())
+            if (!nodesWithMissedClasses.get(markedNode.getKey()).isEmpty())
             System.out.println("Classes missed:");
 
             for (String className : nodesWithMissedClasses.get(markedNode.getKey())) {
