@@ -21,7 +21,6 @@ import java.io.InputStream;
 import java.util.*;
 import java.util.jar.JarEntry;
 import java.util.jar.JarFile;
-import java.util.stream.Collectors;
 
 import static com.repoMiner.CustomClassLoader.getNextJarEntryMatches;
 
@@ -74,10 +73,13 @@ public class TreeDecider {
 
         DependencyNode rootNode = collectResult.getRoot();
 
-        // разметка дерева транзитивных зависимостей: каждой ноде сопоставляются реально соответствующие ей библиотеки
-        List<Pair<DependencyNode, Set<String>>> markedNodes = markTree(rootNode);
+        // вычисление нод-победителей для пересекающихся множеств вложенных библиотек
+        Map<String, DependencyNode> libraryToNodeResolutionMap = new HashMap<>();
 
-        loadDependencies(markedNodes);
+        checkForIntersectionWin(libraryToNodeResolutionMap, rootNode);
+        calculateIntersectionWinnerDependencies(rootNode, libraryToNodeResolutionMap);
+
+        loadDependencies(getLayeredWinnerNodes(rootNode), libraryToNodeResolutionMap);
     }
 
 
@@ -126,73 +128,101 @@ public class TreeDecider {
         return dependencies;
     }
 
-    // Markation of all nodes with their respectful libs
-    // Breadth First Traversal
+    private List<DependencyNode> getLayeredWinnerNodes(DependencyNode rootNode) {
 
-    private List<Pair<DependencyNode, Set<String>>> markTree(DependencyNode rootNode) throws IOException, XmlPullParserException, ArtifactResolutionException {
-
-        Set<String> checkedLibraries = new HashSet<>();
-
-        List<Pair<DependencyNode, Set<String>>> markedLayeredNodes = new ArrayList<>();
+        List<DependencyNode> layeredWinnerNodes = new ArrayList<>();
 
         Queue<DependencyNode> fringe = new LinkedList<>();
-        ((LinkedList<DependencyNode>) fringe).add(rootNode);
+        fringe.add(rootNode);
 
         while (!fringe.isEmpty()) {
-
             DependencyNode child = fringe.poll();
-
-            Artifact childArtifact = resolveArtifactJar(child);
 
             if (!isWinnerNode(child)) continue;
 
-            Set<String> nestedLibraries = getNestedPomDependenciesCoordsForExclusion(childArtifact);
-
-            Set<String> nodeMarkerLibraries = new HashSet<>();
-
-            for (String nestedLibrary : nestedLibraries) {
-
-                if (checkedLibraries.contains(nestedLibrary))
-                    continue;
-
-                nodeMarkerLibraries.add(nestedLibrary);
-                checkedLibraries.add(nestedLibrary);
-            }
-
-            markedLayeredNodes.add(new Pair<>(child, nodeMarkerLibraries));
+            layeredWinnerNodes.add(child);
 
             if (!child.getChildren().isEmpty())
-                ((LinkedList<DependencyNode>) fringe).addAll(child.getChildren());
+                fringe.addAll(child.getChildren());
         }
+        return layeredWinnerNodes;
+    }
 
-        return markedLayeredNodes;
+    // Depth in first, tested
+
+    private void calculateIntersectionWinnerDependencies(DependencyNode rootNode,
+                                                         Map<String, DependencyNode> libraryToNodeResolutionMap)
+            throws ArtifactResolutionException, IOException, XmlPullParserException {
+
+        for (DependencyNode child : rootNode.getChildren()) {
+
+            if (!isWinnerNode(child)) continue;
+
+            checkForIntersectionWin(libraryToNodeResolutionMap, child);
+
+            calculateIntersectionWinnerDependencies(child, libraryToNodeResolutionMap);
+        }
+    }
+
+    private void checkForIntersectionWin(Map<String, DependencyNode> libraryToNodeResolutionMap, DependencyNode child) throws ArtifactResolutionException, IOException, XmlPullParserException {
+        Artifact childArtifact = resolveArtifactJar(child);
+
+        Set<String> nestedLibraries = getNestedPomDependenciesCoordsForExclusion(childArtifact);
+
+        for (String nestedLibrary : nestedLibraries) {
+            if (!libraryToNodeResolutionMap.containsKey(nestedLibrary))
+                libraryToNodeResolutionMap.put(nestedLibrary, child);
+        }
     }
 
 
     // Loading of marked dependencies
     // Order doesn't matter so we're exploring exhaustively
     // Classes, defined && missed earlier are refused to be loaded later
-    private void loadDependencies(List<Pair<DependencyNode, Set<String>>> markedNodes) throws IOException,
-            ArtifactResolutionException {
+
+    private void loadDependencies(List<DependencyNode> layeredWinnerNodes,
+                                  Map<String, DependencyNode> libraryToNodeResolutionMap)
+            throws IOException, XmlPullParserException, ArtifactResolutionException {
 
         Map<DependencyNode, Set<String>> nodesWithMissedClasses = new HashMap<>();
         Map<DependencyNode, Set<Class>> nodesWithRecognizedClasses = new HashMap<>();
+
+        Map<DependencyNode, Set<String>> markedNodes = new HashMap<>();
 
         while (true) {
 
             boolean found = false;
 
-            for (Pair<DependencyNode, Set<String>> markedNode : markedNodes) {
-
-                DependencyNode currentNode = markedNode.component1();
+            for (DependencyNode currentNode : layeredWinnerNodes) {
 
                 Set<String> filterClassNames = new HashSet<>();
 
-                for (Map.Entry<DependencyNode, Set<String>> pair : nodesWithMissedClasses.entrySet()) {
-                    filterClassNames.addAll(pair.getValue());
+                Artifact currentArtifact = resolveArtifactJar(currentNode);
+
+                Set<String> nestedLibraries = getNestedPomDependenciesCoordsForExclusion(currentArtifact);
+
+                boolean isRealWinner = false;
+
+                for (String nestedLibrary : nestedLibraries) {
+                    if (libraryToNodeResolutionMap.containsKey(nestedLibrary) &&
+                            !libraryToNodeResolutionMap.get(nestedLibrary).equals(currentNode)) {
+                        filterClassNames.addAll(getNodesIntersection(currentNode,
+                                libraryToNodeResolutionMap.get(nestedLibrary)));
+                    } else {
+
+                        Set<String> currentSet = markedNodes.getOrDefault(currentNode, new HashSet<>());
+                        currentSet.add(nestedLibrary);
+                        markedNodes.put(currentNode, currentSet);
+                        isRealWinner = true;
+                    }
                 }
 
-                Pair<Set<Class>,Set<String>> loadResults = loadArtifact(currentNode, filterClassNames);
+                if (!isRealWinner) {
+                    markedNodes.put(currentNode, new HashSet<>());
+                    continue;
+                }
+
+                Pair<Set<Class>, Set<String>> loadResults = loadArtifact(currentNode, filterClassNames);
 
                 if (((nodesWithMissedClasses.get(currentNode) != null) &&
                         (nodesWithMissedClasses.get(currentNode).size()
@@ -211,36 +241,79 @@ public class TreeDecider {
         logLoadingStatus(markedNodes, nodesWithMissedClasses, nodesWithRecognizedClasses);
     }
 
-    private void logLoadingStatus(List<Pair<DependencyNode, Set<String>>> markedNodes,
+    private Set<String> getAllArtifactsClassNames(Artifact artifact) throws IOException {
+
+        JarFile jar = new JarFile(artifact.getFile());
+        JarEntry jarEntry;
+
+        Enumeration<JarEntry> jarEntryEnumeration = jar.entries();
+
+        Set<String> classNames = new HashSet<>();
+
+        while (true) {
+
+            jarEntry = getNextJarEntryMatches(jarEntryEnumeration, ".class");       //filter target
+
+            if (jarEntry == null) {
+                break;
+            }
+
+            classNames.add(jarEntry.getName());
+        }
+
+        return classNames;
+    }
+
+    private Set<String> getNodesIntersection(DependencyNode currentNode, DependencyNode winnerNode)
+            throws ArtifactResolutionException, IOException {
+
+        Artifact currentArtifact = resolveArtifactJar(currentNode);
+        Artifact winnerArtifact = resolveArtifactJar(winnerNode);
+
+        Set<String> classNames = getAllArtifactsClassNames(currentArtifact);
+        classNames.retainAll(getAllArtifactsClassNames(winnerArtifact));
+
+        return classNames;
+
+    }
+
+    private void logLoadingStatus(Map<DependencyNode, Set<String>> markedNodes,
                                   Map<DependencyNode, Set<String>> nodesWithMissedClasses,
                                   Map<DependencyNode, Set<Class>> nodesWithRecognizedClasses) {
 
-        for (Pair<DependencyNode, Set<String>> markedNode : markedNodes) {
+        for (Map.Entry<DependencyNode, Set<String>> markedNode : markedNodes.entrySet()) {
 
-            System.out.println("");
-            System.out.println("~ Archive "+ ArtifactIdUtils.toBaseId(markedNode.getFirst().getArtifact())+" ~");
+            System.out.println();
+            System.out.println("~ Archive " + ArtifactIdUtils.toBaseId(markedNode.getKey().getArtifact()) + " ~");
+
+            if (markedNode.getValue().isEmpty()) continue;
+
             System.out.println("Contains libs:");
 
-            for (String nestedLibrary: markedNode.getSecond()){
-                System.out.println("+ "+nestedLibrary);
+            for (String nestedLibrary : markedNode.getValue()) {
+                System.out.println("+ " + nestedLibrary);
             }
 
+
+            if (!nodesWithRecognizedClasses.get(markedNode.getKey()).isEmpty())
             System.out.println("Classes recognized:");
 
-            for (Class aClass: nodesWithRecognizedClasses.get(markedNode.getFirst())){
-                System.out.println("* "+aClass.getCanonicalName());
+            for (Class aClass : nodesWithRecognizedClasses.get(markedNode.getKey())) {
+                System.out.println("* " + aClass.getCanonicalName());
             }
 
+
+            if (nodesWithMissedClasses.get(markedNode.getKey()).isEmpty())
             System.out.println("Classes missed:");
 
-            for (String className: nodesWithMissedClasses.get(markedNode.getFirst())){
-                System.out.println("* "+className);
+            for (String className : nodesWithMissedClasses.get(markedNode.getKey())) {
+                System.out.println("* " + className);
             }
         }
     }
 
 
-    private Pair<Set<Class>,Set<String>> loadArtifact(DependencyNode dependencyNode, Set<String> filterClassNames)
+    private Pair<Set<Class>, Set<String>> loadArtifact(DependencyNode dependencyNode, Set<String> filterClassNames)
             throws ArtifactResolutionException, IOException {
 
         Artifact artifact = resolveArtifactJar(dependencyNode);

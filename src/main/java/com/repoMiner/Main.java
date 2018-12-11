@@ -14,7 +14,7 @@ public class Main {
         try
         {
             aetherTreeConstructor.loadPackageTree(
-                    "com.repoMiner.fatInOutExploration:anotherFatJarWithDependentTreeModules:1.0-SNAPSHOT");
+                    "com.repoMiner.tester:target:1.0-SNAPSHOT");
         } catch (ArtifactDescriptorException | DependencyCollectionException
                 | XmlPullParserException | IOException | ArtifactResolutionException e) {
             e.printStackTrace();
