@@ -6,9 +6,10 @@ import org.eclipse.aether.RepositorySystem;
 import org.eclipse.aether.collection.DependencyCollectionException;
 import org.eclipse.aether.resolution.ArtifactDescriptorException;
 import org.eclipse.aether.resolution.ArtifactResolutionException;
-import sun.reflect.generics.tree.Tree;
 
 import java.io.IOException;
+import java.lang.reflect.Method;
+import java.util.Set;
 
 public class AetherTreeConstructor {
 
@@ -16,27 +17,26 @@ public class AetherTreeConstructor {
 
     private DefaultRepositorySystemSession defaultRepositorySystemSession;
 
+    private TreeDecider treeDecider;
+
     static {
-        //PackageTreeDownloader.setRepositorySystem(repositorySystem);
         TreeDecider.setRepositorySystem(repositorySystem);
-        RepoModelResolver.setRepositorySystem(repositorySystem);
     }
 
     public AetherTreeConstructor(String localRepositoryDir) {
         this.defaultRepositorySystemSession = AetherUtils.newRepositorySystemSession(repositorySystem, localRepositoryDir);
+        this.treeDecider=new TreeDecider(defaultRepositorySystemSession);
     }
 
-    public void loadPackageTree(String coords) throws ArtifactDescriptorException, DependencyCollectionException,
+    public Set<Method> getPackageMethods(String coords, Set<String> filterPatterns)
+            throws ArtifactDescriptorException, XmlPullParserException, IOException,
+            DependencyCollectionException, ArtifactResolutionException {
+        return treeDecider.getAPIMethods(coords, filterPatterns);
+    }
+
+    public void loadPackageTree(String coords, Set<String> filterPatterns) throws ArtifactDescriptorException, DependencyCollectionException,
             IOException, XmlPullParserException, ArtifactResolutionException {
-
-        /*PackageTreeDownloader packageTreeDownloader=new PackageTreeDownloader(defaultRepositorySystemSession);
-        packageTreeDownloader.setBasePackageCoordinates(coords);
-        packageTreeDownloader.makeTree(coords, true);*/
-
-        TreeDecider treeDecider=new TreeDecider(defaultRepositorySystemSession);
-        treeDecider.makeTree(coords);
+       treeDecider.logWinnerLibsAndClasses(coords, filterPatterns);
     }
-
-
 
 }
