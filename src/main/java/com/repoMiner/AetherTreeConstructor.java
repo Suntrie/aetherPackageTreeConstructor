@@ -31,7 +31,7 @@ public class AetherTreeConstructor {
     public Set<Method> getPackageMethods(String coords, Set<String> filterPatterns)
             throws ArtifactDescriptorException, XmlPullParserException, IOException,
             DependencyCollectionException, ArtifactResolutionException {
-        return treeDecider.getAPIMethods(coords, filterPatterns);
+        return treeDecider.getAPIMethods(coords, filterPatterns, true);
     }
 
     public void loadPackageTree(String coords, Set<String> filterPatterns) throws ArtifactDescriptorException, DependencyCollectionException,

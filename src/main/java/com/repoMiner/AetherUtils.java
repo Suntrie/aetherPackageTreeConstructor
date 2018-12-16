@@ -59,7 +59,7 @@ public class AetherUtils {
             session.setDependencySelector(depFilter);
         }else{
             DependencySelector depFilter =
-                    new AndDependencySelector(new ScopeDependencySelector(JavaScopes.TEST, JavaScopes.SYSTEM),
+                    new AndDependencySelector(new ScopeDependencySelector(JavaScopes.TEST),
                             new ExclusionDependencySelector());
 
             session.setDependencySelector(depFilter);

@@ -21,7 +21,8 @@ public class Main {
 
         try {
             methodSet = aetherTreeConstructor.getPackageMethods(
-                    "com.repoMiner.fatInOutExploration.:anotherFatJarWithDependentTreeModules:1.0-SNAPSHOT", filters);
+                    "com.repoMiner.tester:" +
+                            "providedIgnorer:1.0-SNAPSHOT", filters);
         } catch (ArtifactDescriptorException | DependencyCollectionException
                 | XmlPullParserException | IOException | ArtifactResolutionException e) {
             e.printStackTrace();

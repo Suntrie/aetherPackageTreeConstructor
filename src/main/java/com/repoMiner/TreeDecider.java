@@ -23,7 +23,6 @@ import java.lang.reflect.Method;
 import java.util.*;
 import java.util.jar.JarEntry;
 import java.util.jar.JarFile;
-import java.util.stream.Collectors;
 
 import static com.repoMiner.CustomClassLoader.getNextJarEntryMatches;
 
@@ -31,7 +30,6 @@ public class TreeDecider {
 
     private static RepositorySystem repositorySystem;
     private DefaultRepositorySystemSession defaultRepositorySystemSession;
-    private String basePackageCoordinates;
 
     public TreeDecider(DefaultRepositorySystemSession defaultRepositorySystemSession) {
         this.defaultRepositorySystemSession = defaultRepositorySystemSession;
@@ -45,11 +43,9 @@ public class TreeDecider {
         TreeDecider.repositorySystem = repositorySystem;
     }
 
-   private CustomClassLoader customClassLoader = new CustomClassLoader();
+    private CustomClassLoader customClassLoader = new CustomClassLoader();
 
-    private DependencyNodeDescriptorMap getWinnerPackagesClassification(String coords, Set<String> filterPatterns) throws ArtifactDescriptorException,
-            XmlPullParserException, IOException, ArtifactResolutionException, DependencyCollectionException {
-
+    private DependencyNode getDependencyTree(String coords) throws ArtifactDescriptorException, DependencyCollectionException {
         Artifact artifact = new DefaultArtifact(coords);
 
         AetherUtils.setFiltering(defaultRepositorySystemSession, false);
@@ -74,15 +70,21 @@ public class TreeDecider {
         // получение транзитивных зависимостей
         CollectResult collectResult = repositorySystem.collectDependencies(defaultRepositorySystemSession, collectRequest);
 
-        DependencyNode rootNode = collectResult.getRoot();
+        return collectResult.getRoot();
+    }
 
+    private DependencyNodeDescriptorMap getWinnerPackagesClassification(String coords, Set<String> filterPatterns)
+            throws XmlPullParserException,
+            IOException, ArtifactResolutionException, ArtifactDescriptorException, DependencyCollectionException {
+
+        DependencyNode rootNode=getDependencyTree(coords);
         // вычисление нод-победителей для пересекающихся множеств вложенных библиотек
         Map<String, DependencyNode> libraryToNodeResolutionMap = new HashMap<>();
 
         checkForIntersectionWin(libraryToNodeResolutionMap, rootNode);
         calculateIntersectionWinnerDependencies(rootNode, libraryToNodeResolutionMap);
 
-        DependencyNodeDescriptorMap dependencyNodeDescriptorMap=new DependencyNodeDescriptorMap();
+        DependencyNodeDescriptorMap dependencyNodeDescriptorMap = new DependencyNodeDescriptorMap();
 
         loadNodesExhaustively(getLayeredWinnerNodes(rootNode),
                 libraryToNodeResolutionMap,
@@ -95,9 +97,9 @@ public class TreeDecider {
 
     private void filterCommonClasses(DependencyNodeDescriptorMap dependencyNodeDescriptorMap, Set<String> filterPatterns) {
 
-        for (Pair<DependencyNode, Set<Class>> pair: dependencyNodeDescriptorMap.getDependencyNodesWithFoundClasses()){
-            for (String filter: filterPatterns){
-                    pair.getSecond().removeIf(it->it.getCanonicalName().contains(filter));
+        for (Pair<DependencyNode, Set<Class>> pair : dependencyNodeDescriptorMap.getDependencyNodesWithFoundClasses()) {
+            for (String filter : filterPatterns) {
+                pair.getSecond().removeIf(it -> it.getCanonicalName().contains(filter));
             }
         }
     }
@@ -106,7 +108,8 @@ public class TreeDecider {
     public void logWinnerLibsAndClasses(String coords, Set<String> filterPatterns) throws ArtifactDescriptorException, DependencyCollectionException,
             IOException, XmlPullParserException, ArtifactResolutionException {
 
-        DependencyNodeDescriptorMap winnersClassificaiton= getWinnerPackagesClassification(coords, filterPatterns);
+        DependencyNodeDescriptorMap winnersClassificaiton = getWinnerPackagesClassification(coords,
+                filterPatterns);
         logLoadingStatus(winnersClassificaiton);
     }
 
@@ -216,37 +219,40 @@ public class TreeDecider {
     }
 
 
-
-    public Set<Method> getAPIMethods(String coords, Set<String> filterPatterns) throws ArtifactDescriptorException, XmlPullParserException,
+    public Set<Method> getAPIMethods(String coords, Set<String> filterPatterns, boolean root) throws ArtifactDescriptorException, XmlPullParserException,
             DependencyCollectionException, ArtifactResolutionException, IOException {
 
-        DependencyNodeDescriptorMap winnersClassificaiton= getWinnerPackagesClassification(coords, filterPatterns);
+        DependencyNodeDescriptorMap winnersClassificaiton = getWinnerPackagesClassification(coords, filterPatterns);
 
         Set<Method> result = new HashSet<>();
 
-        for (Pair<DependencyNode, Set<String>> markedNode :  winnersClassificaiton.
-                getDependencyNodesWithNestedLibs()) {
+            for (Pair<DependencyNode, Set<String>> markedNode : winnersClassificaiton.
+                    getDependencyNodesWithNestedLibs()) {
 
-            if (markedNode.getSecond().isEmpty() || winnersClassificaiton.
-                    getDependencyNodeDescriptor(markedNode.getFirst()).getFoundClasses().size() == 0) continue;
+                if (root&&! ArtifactIdUtils.toBaseId(markedNode.getFirst().getArtifact())
+                        .equals(ArtifactIdUtils.toBaseId(getDependencyTree(coords).getArtifact()))) continue;
 
-            for (Class aClass : winnersClassificaiton.getDependencyNodeDescriptor(markedNode.getFirst()).getFoundClasses()) {
+                if (markedNode.getSecond().isEmpty() || winnersClassificaiton.
+                        getDependencyNodeDescriptor(markedNode.getFirst()).getFoundClasses().size() == 0) continue;
 
-                if (customClassLoader.getClassExecutablePublicMethods(aClass) != null) {
-                    for (Method method: customClassLoader.getClassExecutablePublicMethods(aClass)) {
-                        boolean toFilter = false;
-                        for (String filter : filterPatterns) {
-                            if (method.getDeclaringClass().getCanonicalName().contains(filter))
-                                toFilter=true;
-                            break;
+                for (Class aClass : winnersClassificaiton.getDependencyNodeDescriptor(markedNode.getFirst()).getFoundClasses()) {
+
+                    if (customClassLoader.getClassExecutablePublicMethods(aClass) != null) {
+                        for (Method method : customClassLoader.getClassExecutablePublicMethods(aClass)) {
+                            boolean toFilter = false;
+                            for (String filter : filterPatterns) {
+                                if (method.getDeclaringClass().getCanonicalName().contains(filter)) {
+                                    toFilter = true;
+                                    break;
+                                }
+                            }
+                            if (!toFilter)
+                                result.add(method);
                         }
-                        if(!toFilter)
-                        result.add(method);
-                    }
 
+                    }
                 }
             }
-        }
 
         return result;
     }
@@ -301,10 +307,10 @@ public class TreeDecider {
 
                 Pair<Set<Class>, Set<String>> loadResults = loadArtifact(currentNode, filterClassNames);
 
-                Set<String> missedClasses=dependencyNodeDescriptorMap.
-                        getDependencyNodeDescriptor(currentNode).getMissedClasses();
+                Set<Class> foundClasses = dependencyNodeDescriptorMap.
+                        getDependencyNodeDescriptor(currentNode).getFoundClasses();
 
-                if (missedClasses == null || (missedClasses.size()> loadResults.getSecond().size())) {
+                if ((foundClasses.size() < loadResults.getFirst().size())) {
                     found = true;
                     dependencyNodeDescriptorMap.putDependencyNode(currentNode,
                             new DependencyNodeDescriptorMap.DependencyNodeDescriptor(loadResults.getFirst(),
@@ -372,7 +378,7 @@ public class TreeDecider {
             }
 
 
-            if (! dependencyNodeDescriptorMap.getDependencyNodeDescriptor(markedNode.getFirst()).
+            if (!dependencyNodeDescriptorMap.getDependencyNodeDescriptor(markedNode.getFirst()).
                     getFoundClasses().isEmpty())
                 System.out.println("Classes recognized:");
 
@@ -400,7 +406,7 @@ public class TreeDecider {
         Artifact artifact = resolveArtifactJar(dependencyNode);
 
         return customClassLoader.loadLibraryClassSet(artifact.getFile().getPath(),
-                filterClassNames); //TODO: check for multimodule proj
+                filterClassNames);
 
     }
 
