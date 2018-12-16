@@ -23,6 +23,7 @@ import java.lang.reflect.Method;
 import java.util.*;
 import java.util.jar.JarEntry;
 import java.util.jar.JarFile;
+import java.util.stream.Collectors;
 
 import static com.repoMiner.CustomClassLoader.getNextJarEntryMatches;
 
@@ -81,13 +82,17 @@ public class TreeDecider {
         // вычисление нод-победителей для пересекающихся множеств вложенных библиотек
         Map<String, DependencyNode> libraryToNodeResolutionMap = new HashMap<>();
 
-        checkForIntersectionWin(libraryToNodeResolutionMap, rootNode);
-        calculateIntersectionWinnerDependencies(rootNode, libraryToNodeResolutionMap);
+        // вычисление нод-победителей для пересекающихся множеств классов разных библиотек
+        Map<DependencyNode, Set<String>> dependencyNodeToClassesMap=new HashMap<>();
+
+        checkForIntersectionWin(libraryToNodeResolutionMap, dependencyNodeToClassesMap, rootNode);
+        calculateIntersectionWinnerDependencies(rootNode, libraryToNodeResolutionMap, dependencyNodeToClassesMap);
 
         DependencyNodeDescriptorMap dependencyNodeDescriptorMap = new DependencyNodeDescriptorMap();
 
         loadNodesExhaustively(getLayeredWinnerNodes(rootNode),
                 libraryToNodeResolutionMap,
+                dependencyNodeToClassesMap,
                 dependencyNodeDescriptorMap);
 
         filterCommonClasses(dependencyNodeDescriptorMap, filterPatterns);
@@ -193,21 +198,25 @@ public class TreeDecider {
     // Depth in first, tested
 
     private void calculateIntersectionWinnerDependencies(DependencyNode rootNode,
-                                                         Map<String, DependencyNode> libraryToNodeResolutionMap)
+                                                         Map<String, DependencyNode> libraryToNodeResolutionMap,
+                                                         Map<DependencyNode, Set<String>> dependencyNodeToClassesMap)
             throws ArtifactResolutionException, IOException, XmlPullParserException {
+
 
         for (DependencyNode child : rootNode.getChildren()) {
 
             if (!isWinnerNode(child)) continue;
 
-            checkForIntersectionWin(libraryToNodeResolutionMap, child);
+            checkForIntersectionWin(libraryToNodeResolutionMap, dependencyNodeToClassesMap, child);
 
-            calculateIntersectionWinnerDependencies(child, libraryToNodeResolutionMap);
+            calculateIntersectionWinnerDependencies(child, libraryToNodeResolutionMap, dependencyNodeToClassesMap);
         }
     }
 
-    private void checkForIntersectionWin(Map<String, DependencyNode> libraryToNodeResolutionMap, DependencyNode child)
+    private void checkForIntersectionWin(Map<String, DependencyNode> libraryToNodeResolutionMap,
+                                         Map<DependencyNode, Set<String>> dependencyNodeToClassesMap, DependencyNode child)
             throws ArtifactResolutionException, IOException, XmlPullParserException {
+
         Artifact childArtifact = resolveArtifactJar(child);
 
         Set<String> nestedLibraries = getNestedPomDependenciesCoordsForExclusion(childArtifact);
@@ -215,6 +224,15 @@ public class TreeDecider {
         for (String nestedLibrary : nestedLibraries) {
             if (!libraryToNodeResolutionMap.containsKey(nestedLibrary))
                 libraryToNodeResolutionMap.put(nestedLibrary, child);
+        }
+
+
+        for (String className: getAllArtifactsClassNames(childArtifact)){
+            if (dependencyNodeToClassesMap.values().stream()
+                    .flatMap(Collection::stream).collect(Collectors.toSet()).contains(className)) continue;
+            Set<String> nodeClasses=dependencyNodeToClassesMap.getOrDefault(child, new HashSet<>());
+            nodeClasses.add(className);
+            dependencyNodeToClassesMap.put(child,nodeClasses);
         }
     }
 
@@ -260,6 +278,7 @@ public class TreeDecider {
     private void loadNodesExhaustively
             (List<DependencyNode> layeredWinnerNodes,
              Map<String, DependencyNode> libraryToNodeResolutionMap,
+             Map<DependencyNode, Set<String>> dependencyNodeClassSetMap,
              DependencyNodeDescriptorMap dependencyNodeDescriptorMap) throws ArtifactResolutionException, IOException,
             XmlPullParserException {
 
@@ -304,6 +323,12 @@ public class TreeDecider {
                     markedNodes.put(currentNode, new HashSet<>());
                     continue;
                 }
+
+                Set<String> classNames=dependencyNodeClassSetMap.values().stream().flatMap(Collection::stream)
+                        .collect(Collectors.toSet());
+                classNames.removeAll(dependencyNodeClassSetMap.get(currentNode));
+
+                filterClassNames.addAll(classNames);
 
                 Pair<Set<Class>, Set<String>> loadResults = loadArtifact(currentNode, filterClassNames);
 
